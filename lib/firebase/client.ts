@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
+import { getAuth, initializeRecaptchaConfig } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
@@ -17,3 +17,9 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 export const storage = getStorage(app)
+
+// Required in Firebase v10+ for phone auth — pre-fetches reCAPTCHA config
+// from Firebase servers so tokens are valid when signInWithPhoneNumber is called.
+if (typeof window !== 'undefined') {
+  initializeRecaptchaConfig(auth).catch(() => {})
+}

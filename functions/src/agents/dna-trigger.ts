@@ -1,12 +1,29 @@
-// functions/src/agents/dna-trigger.ts
 import * as functions from 'firebase-functions/v1'
 import * as admin from 'firebase-admin'
-import { GoogleGenerativeAI, SchemaType, Schema } from '@google/generative-ai'
+import OpenAI from 'openai'
 import * as https from 'https'
 
 if (admin.apps.length === 0) admin.initializeApp()
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+const client = new OpenAI({
+  apiKey: process.env.NVIDIA_API_KEY!,
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+
+const MODEL = 'google/gemma-4-31b-it'
+
+const SYSTEM_PROMPT = `You are a civic infrastructure expert. Analyze the reported issue and respond with a JSON object only — no markdown, no explanation.
+
+Required JSON fields:
+- classification: string (e.g. "Pothole", "Water Leakage", "Broken Streetlight", "Garbage Dump", "Open Drain")
+- subcategory: string (e.g. "Road pothole", "Pipe burst", "Missing manhole cover")
+- rootCauseHypothesis: string (1–2 sentences)
+- severityScore: number 1–10 (1=cosmetic, 10=immediate hazard)
+- severityTrajectory: "stable" | "worsening" | "critical"
+- trajectoryReason: string (1 sentence)
+- departmentName: string (e.g. "Roads & Infrastructure", "Water Supply Board", "Street Lighting Dept")
+- resolutionETA: string ISO date or null
+- confidence: number 0.0–1.0`
 
 async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
@@ -23,22 +40,6 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeTy
   })
 }
 
-const DNA_SCHEMA: Schema = {
-  type: SchemaType.OBJECT,
-  properties: {
-    classification: { type: SchemaType.STRING },
-    subcategory: { type: SchemaType.STRING },
-    rootCauseHypothesis: { type: SchemaType.STRING },
-    severityScore: { type: SchemaType.NUMBER },
-    severityTrajectory: { type: SchemaType.STRING, format: 'enum', enum: ['stable', 'worsening', 'critical'] },
-    trajectoryReason: { type: SchemaType.STRING },
-    departmentName: { type: SchemaType.STRING },
-    resolutionETA: { type: SchemaType.STRING },
-    confidence: { type: SchemaType.NUMBER },
-  },
-  required: ['classification', 'subcategory', 'rootCauseHypothesis', 'severityScore', 'severityTrajectory', 'trajectoryReason', 'departmentName', 'confidence'],
-}
-
 export const onIssueCreated = functions.firestore
   .document('issues/{issueId}')
   .onCreate(async (snap, context) => {
@@ -53,28 +54,30 @@ export const onIssueCreated = functions.firestore
     try {
       const { base64, mimeType } = await fetchImageAsBase64(issue.media[0])
 
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: 'application/json',
-          responseSchema: DNA_SCHEMA,
-        },
+      const response = await client.chat.completions.create({
+        model: MODEL,
+        max_tokens: 1024,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mimeType};base64,${base64}` },
+              },
+              {
+                type: 'text',
+                text: `Issue description: "${issue.rawDescription}"\nWard: ${issue.location?.wardName ?? 'Unknown'}\n\nAnalyze the image and description. Return the JSON assessment.`,
+              },
+            ],
+          },
+        ],
       })
 
-      const prompt = `You are a civic infrastructure expert. Analyze this reported issue.
-
-Description: "${issue.rawDescription}"
-Ward: ${issue.location?.wardName ?? 'Unknown'}
-
-Return classification, root cause, severity (1–10), trajectory, department, resolution ETA, and confidence.`
-
-      const result = await model.generateContent([
-        prompt,
-        { inlineData: { mimeType, data: base64 } },
-      ])
-
-      const raw = JSON.parse(result.response.text())
+      const raw = JSON.parse(response.choices[0].message.content!)
 
       const dna = {
         classification: raw.classification,

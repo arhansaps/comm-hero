@@ -50,6 +50,13 @@ export function ReportStepper() {
       // Update the issue doc with the uploaded media URLs
       await updateDoc(doc(db, 'issues', issueId), { media: mediaUrls })
 
+      // Fire DNA analysis in the background — don't block navigation
+      fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issueId }),
+      })
+
       toast.success('Issue reported! AI is analyzing your report…')
       router.push(`/issue/${issueId}`)
     } catch (err) {

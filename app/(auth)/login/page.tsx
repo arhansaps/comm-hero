@@ -26,11 +26,14 @@ export default function LoginPage() {
   async function sendOTP() {
     setLoading(true)
     try {
-      if (!recaptchaRef.current) {
-        recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible',
-        })
+      // Always create a fresh verifier — a previously failed attempt leaves the
+      // widget in a broken state that causes silent failures on retry.
+      if (recaptchaRef.current) {
+        recaptchaRef.current.clear()
       }
+      recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+      })
       confirmationRef.current = await signInWithPhoneNumber(
         auth,
         phone,

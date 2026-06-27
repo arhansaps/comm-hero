@@ -1,7 +1,7 @@
 import { getIssue } from '@/lib/firebase/issues'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
-import { DNAPanel } from '@/components/issue/DNAPanel'
+import { DNALivePanel } from '@/components/issue/DNALivePanel'
 import { StatusTimeline } from '@/components/issue/StatusTimeline'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -48,15 +48,7 @@ export default async function IssueDetailPage({ params }: Props) {
         </CardContent>
       </Card>
 
-      {issue.dna ? (
-        <DNAPanel dna={issue.dna} />
-      ) : (
-        <Card>
-          <CardContent className="py-6 text-center text-slate-500 text-sm">
-            AI analysis in progress… Check back in a few seconds.
-          </CardContent>
-        </Card>
-      )}
+      <DNALivePanel issueId={params.id} initialDna={issue.dna ?? null} />
 
       <Card>
         <CardHeader>
